@@ -17,14 +17,321 @@
  */
 
 // =========================================================================
-// Universal Multi-Origin Gateway Connector (Auto-detects Port 8000, 5500, file://, etc.)
+// =========================================================================
+// Universal Multi-Origin & Cloud Standalone Gateway (Vercel / GitHub / Local)
 // =========================================================================
 let apiBaseUrl = "";
 let userDismissedBanner = false;
 
+const isCloudHosted = typeof window !== "undefined" && (
+  window.location.hostname.includes("vercel.app") ||
+  window.location.hostname.includes("github.io") ||
+  window.location.hostname.includes("netlify.app")
+);
+
+class StandaloneSimulationGateway {
+  constructor() {
+    this.stats = {
+      total_actions: 1284,
+      approved_count: 1247,
+      logged_count: 0,
+      blocked_count: 37,
+      pending_count: 1,
+      denied_count: 0,
+      prompt_injections_detected: 14,
+      security_score: 96,
+      system_status: "PROTECTED",
+      agents_protected: 6,
+      risk_distribution: { LOW: 72, MEDIUM: 18, HIGH: 7, CRITICAL: 3 },
+      threat_intel_counts: {
+        prompt_injections: 14,
+        destructive_actions: 8,
+        data_exfiltrations: 6,
+        privilege_escalations: 4,
+        suspicious_tool_calls: 9,
+      }
+    };
+    this.logs = [
+      {
+        request_id: 'req_live_01',
+        timestamp: new Date().toISOString(),
+        agent: 'UntrustedAgent',
+        action: 'read_file',
+        target: 'system_prompt.txt',
+        risk_level: 'RED',
+        decision: 'BLOCKED',
+        reason: 'Prompt injection attempt detected: System instruction override detected.',
+        prompt_injection_detected: true,
+        approval_required: false
+      },
+      {
+        request_id: 'req_live_02',
+        timestamp: new Date(Date.now() - 45000).toISOString(),
+        agent: 'DatabaseAgent',
+        action: 'drop_database_table',
+        target: 'users',
+        risk_level: 'RED',
+        decision: 'BLOCKED',
+        reason: 'Destructive action blocked: drop_database_table violates safety baseline.',
+        prompt_injection_detected: false,
+        approval_required: false
+      },
+      {
+        request_id: 'req_live_03',
+        timestamp: new Date(Date.now() - 120000).toISOString(),
+        agent: 'CommunicationAgent',
+        action: 'send_email',
+        target: 'partner@example.com',
+        risk_level: 'AMBER',
+        decision: 'LOGGED',
+        reason: 'External communication action logged for compliance auditing.',
+        prompt_injection_detected: false,
+        approval_required: false
+      },
+      {
+        request_id: 'req_live_04',
+        timestamp: new Date(Date.now() - 240000).toISOString(),
+        agent: 'ResearchAgent',
+        action: 'read_file',
+        target: 'quarterly_research.pdf',
+        risk_level: 'GREEN',
+        decision: 'ALLOW',
+        reason: 'Action verified safe: Read-only non-sensitive document query.',
+        prompt_injection_detected: false,
+        approval_required: false
+      },
+      {
+        request_id: 'req_live_05',
+        timestamp: new Date(Date.now() - 360000).toISOString(),
+        agent: 'InfraAgent',
+        action: 'chmod_system',
+        target: '/root/exec',
+        risk_level: 'RED',
+        decision: 'APPROVAL_PENDING',
+        reason: 'Privilege escalation detected: Modifying root execute permissions requires operator sign-off.',
+        prompt_injection_detected: false,
+        approval_required: true
+      }
+    ];
+    this.pending = [
+      {
+        id: 1,
+        request_id: 'req_live_05',
+        timestamp: new Date(Date.now() - 360000).toISOString(),
+        agent: 'InfraAgent',
+        action: 'chmod_system',
+        target: '/root/exec',
+        reason: 'Privilege escalation detected: Modifying root execute permissions requires operator sign-off.'
+      }
+    ];
+  }
+
+  handle(path, init = {}) {
+    const method = (init.method || "GET").toUpperCase();
+    const clean = path.split("?")[0].replace(/^https?:\/\/[^\/]+/, "");
+
+    const jsonRes = (data, status = 200) => {
+      return new Response(JSON.stringify(data), {
+        status,
+        headers: { "Content-Type": "application/json" }
+      });
+    };
+
+    if (clean === "/api/stats") return jsonRes(this.stats);
+    if (clean === "/api/logs") return jsonRes(this.logs);
+    if (clean === "/api/pending") return jsonRes(this.pending);
+    if (clean === "/api/health") {
+      return jsonRes({
+        status: "OPERATIONAL",
+        uptime: "99.99%",
+        gateway_version: "v1.2.0 (Cloud Engine)",
+        active_policies: 3,
+        components: [
+          { name: "Runtime Action Interceptor", status: "OPERATIONAL", latency_ms: 0.8 },
+          { name: "Heuristic Injection Detector", status: "OPERATIONAL", latency_ms: 0.4 },
+          { name: "Rule Policy Engine", status: "OPERATIONAL", latency_ms: 0.2 },
+          { name: "Forensic Event Store", status: "OPERATIONAL", latency_ms: 0.9 },
+          { name: "Human-in-the-Loop Queue", status: "OPERATIONAL", latency_ms: 0.3 }
+        ]
+      });
+    }
+
+    if (clean === "/api/agents") {
+      return jsonRes([
+        { name: 'ResearchAgent', trust_level: 'HIGH', risk_score: 12, allowed_tools: ['read_file', 'search_web', 'list_files', 'calculate'], blocked_tools: ['delete_file', 'drop_table', 'execute_shell'], total_actions: 412, allowed_count: 410, blocked_count: 2, policy_violations: 0 },
+        { name: 'CommunicationAgent', trust_level: 'MODERATE', risk_score: 35, allowed_tools: ['send_email', 'post_message', 'read_file'], blocked_tools: ['drop_database_table', 'execute_shell'], total_actions: 310, allowed_count: 295, blocked_count: 15, policy_violations: 2 },
+        { name: 'DatabaseAgent', trust_level: 'RESTRICTED', risk_score: 72, allowed_tools: ['query_status', 'read_document', 'update_record'], blocked_tools: ['drop_database_table', 'delete_database', 'truncate_table'], total_actions: 280, allowed_count: 268, blocked_count: 12, policy_violations: 4 },
+        { name: 'InfraAgent', trust_level: 'RESTRICTED', risk_score: 65, allowed_tools: ['query_status', 'list_files', 'api_request'], blocked_tools: ['shutdown_server', 'reboot_system', 'chmod_system'], total_actions: 145, allowed_count: 139, blocked_count: 6, policy_violations: 1 },
+        { name: 'MaliciousAgent', trust_level: 'UNTRUSTED', risk_score: 98, allowed_tools: [], blocked_tools: ['all_tools', 'execute_shell', 'delete_file'], total_actions: 21, allowed_count: 0, blocked_count: 21, policy_violations: 21 },
+        { name: 'UntrustedAgent', trust_level: 'UNTRUSTED', risk_score: 92, allowed_tools: ['calculate'], blocked_tools: ['read_file', 'send_email', 'execute_shell'], total_actions: 116, allowed_count: 72, blocked_count: 44, policy_violations: 14 }
+      ]);
+    }
+
+    if (clean === "/api/threats") {
+      return jsonRes([
+        { title: 'Prompt Injection Signatures', category: 'Heuristic & NLP', severity: 'CRITICAL', description: 'Detects jailbreak keywords, persona manipulation (ignore previous instructions), and system prompt extraction attacks.', mitigation: 'Heuristic analyzer with regex patterns, token density scoring, and prompt guard boundary enforcement.' },
+        { title: 'Destructive Operation Prevention', category: 'Resource Governance', severity: 'CRITICAL', description: 'Blocks irreversible destruction tools including table dropping, mass record deletion, and storage formatting.', mitigation: 'Zero-Trust policy denying drop/truncate/delete actions across all non-root certified agents.' },
+        { title: 'Data Exfiltration Detection', category: 'Network Boundary', severity: 'HIGH', description: 'Monitors outbound requests attempting to transmit credential files, environment secrets, or customer PII.', mitigation: 'Egress domain whitelisting and payload entropy inspection on all external HTTP tool calls.' },
+        { title: 'Privilege Escalation Control', category: 'Access Management', severity: 'HIGH', description: 'Catches rogue agents attempting to chmod permissions, execute uncontained shell binaries, or acquire sudo rights.', mitigation: 'Mandatory human-in-the-loop approval gating on elevated infrastructure tools.' }
+      ]);
+    }
+
+    if (clean === "/api/posture") {
+      return jsonRes({
+        security_score: 96, prompt_defense: 94, runtime_protection: 98, tool_security: 97, policy_coverage: 92, audit_integrity: 99
+      });
+    }
+
+    if (clean === "/api/policies") {
+      return jsonRes([
+        { id: 'pol_green', name: 'Green Tier: Safe Operations', description: 'Read-only, non-destructive tools permitted with automated logging.', tier: 'GREEN', decision: 'ALLOW', enabled: true, actions: ['read_file', 'search_web', 'list_files', 'calculate', 'fetch_url'] },
+        { id: 'pol_amber', name: 'Amber Tier: Review & Audit Operations', description: 'Sensitive tools requiring full telemetry capture and compliance flagging.', tier: 'AMBER', decision: 'LOGGED', enabled: true, actions: ['send_email', 'post_message', 'api_request', 'update_record'] },
+        { id: 'pol_red', name: 'Red Tier: High Risk & Destructive Boundaries', description: 'Critical operations automatically blocked or gated behind human authorization.', tier: 'RED', decision: 'BLOCKED', enabled: true, actions: ['drop_database_table', 'delete_file', 'execute_shell', 'shutdown_server', 'chmod_system'] }
+      ]);
+    }
+
+    if (clean === "/api/settings") {
+      return jsonRes({
+        gateway_enforcement_mode: 'ACTIVE_BLOCKING',
+        human_approval_threshold: 'HIGH_ONLY',
+        audit_retention_days: 90,
+        strict_injection_defense: true,
+        auto_quarantine_untrusted: true
+      });
+    }
+
+    if (clean === "/api/incidents") {
+      return jsonRes([
+        { incident_id: 'INC-2026-0042', severity: 'CRITICAL', title: 'Adversarial Prompt Injection & Credential Harvest Attempt', status: 'OPEN', agent: 'UntrustedAgent', summary: 'Adversarial jailbreak signature targeting system credentials', detection_reason: 'System instruction override' },
+        { incident_id: 'INC-2026-0039', severity: 'HIGH', title: 'Destructive Table Drop Blocked', status: 'CONTAINED', agent: 'DatabaseAgent', summary: 'Attempted DROP TABLE users intercepted', detection_reason: 'Destructive operation threshold exceeded' }
+      ]);
+    }
+
+    if (clean === "/api/responses") {
+      return jsonRes({
+        rules: [
+          { rule_id: 'RESP-01', name: 'Instant Autonomous Quarantine', trigger: 'Prompt Injection / Privilege Escalation', action: 'Isolate Agent + Revoke Tokens', trigger_count: 14 },
+          { rule_id: 'RESP-02', name: 'Session Token Freeze', trigger: 'Data Exfiltration Signature', action: 'Lock outbound HTTPS proxy socket', trigger_count: 6 }
+        ]
+      });
+    }
+
+    if (clean === "/api/policies/recommendations") {
+      return jsonRes([
+        { rec_id: 'REC-01', title: 'Quarantine UntrustedAgent Outbound Egress', status: 'READY', description: 'UntrustedAgent has 44 blocked actions. Recommend tightening tool boundary.', impact: '+8% Security Posture' }
+      ]);
+    }
+
+    if (clean === "/api/intercept" && method === "POST") {
+      const payload = init.body ? JSON.parse(init.body) : {};
+      const agent = payload.agent || "SimulatorAgent";
+      const action = payload.action || "read_file";
+      const target = payload.target || "";
+      const reqId = `req_${Date.now().toString().slice(-6)}`;
+
+      let decision = "ALLOW";
+      let riskLevel = "GREEN";
+      let riskScore = 18;
+      let reason = "Verified safe: Tool call verified compliant with Zero-Trust policy.";
+      let promptInjection = false;
+      let approvalRequired = false;
+
+      const actionLower = action.toLowerCase();
+      const targetLower = target.toLowerCase();
+
+      if (payload.prompt_injection_detected || targetLower.includes("system_prompt") || targetLower.includes("ignore") || actionLower.includes("injection")) {
+        decision = "BLOCKED";
+        riskLevel = "RED";
+        riskScore = 96;
+        promptInjection = true;
+        reason = "Prompt injection attempt detected: Adversarial system instruction override signature matched.";
+        this.stats.threat_intel_counts.prompt_injections++;
+        this.stats.blocked_count++;
+      } else if (actionLower.includes("drop") || actionLower.includes("delete") || actionLower.includes("truncate") || actionLower.includes("shutdown")) {
+        decision = "BLOCKED";
+        riskLevel = "RED";
+        riskScore = 92;
+        reason = `Destructive action blocked: ${action} on '${target}' violates data safety baseline.`;
+        this.stats.threat_intel_counts.destructive_actions++;
+        this.stats.blocked_count++;
+      } else if (actionLower.includes("chmod") || actionLower.includes("execute") || actionLower.includes("sudo")) {
+        decision = "APPROVAL_PENDING";
+        riskLevel = "RED";
+        riskScore = 84;
+        approvalRequired = true;
+        reason = `Privilege escalation detected: '${action}' requires security operator sign-off.`;
+        this.stats.threat_intel_counts.privilege_escalations++;
+        this.pending.unshift({
+          id: this.pending.length + 1,
+          request_id: reqId,
+          timestamp: new Date().toISOString(),
+          agent: agent,
+          action: action,
+          target: target,
+          reason: reason
+        });
+      } else if (actionLower.includes("send") || actionLower.includes("post") || actionLower.includes("exfil")) {
+        decision = "LOGGED";
+        riskLevel = "AMBER";
+        riskScore = 48;
+        reason = `External communication '${action}' logged to compliance audit trail.`;
+        this.stats.threat_intel_counts.data_exfiltrations++;
+        this.stats.approved_count++;
+      } else {
+        this.stats.approved_count++;
+      }
+
+      this.stats.total_actions++;
+      const newLog = {
+        request_id: reqId,
+        timestamp: new Date().toISOString(),
+        agent: agent,
+        action: action,
+        target: target,
+        risk_level: riskLevel,
+        decision: decision,
+        reason: reason,
+        prompt_injection_detected: promptInjection,
+        approval_required: approvalRequired
+      };
+      this.logs.unshift(newLog);
+
+      return jsonRes({
+        status: "success",
+        request_id: reqId,
+        decision: decision,
+        risk_level: riskLevel,
+        risk_score: riskScore,
+        reasons: [reason],
+        prompt_injection_detected: promptInjection,
+        approval_required: approvalRequired,
+        evaluation_ms: 1.4
+      });
+    }
+
+    if (clean.startsWith("/api/approve/") || clean.startsWith("/api/deny/")) {
+      const parts = clean.split("/");
+      const type = parts[2];
+      const reqId = parts[3];
+      this.pending = this.pending.filter(p => p.request_id !== reqId);
+      return jsonRes({ status: "success", request_id: reqId, decision: type.toUpperCase() });
+    }
+
+    if (clean === "/api/reset" && method === "POST") {
+      this.pending = [];
+      return jsonRes({ status: "success", message: "Demo state reset successfully" });
+    }
+
+    return null;
+  }
+}
+
+const clientGateway = new StandaloneSimulationGateway();
+
 function getGatewayBase() {
   if (apiBaseUrl) return apiBaseUrl;
   if (typeof window === "undefined") return "";
+  if (isCloudHosted) return "standalone";
   // If hosted directly on FastAPI (port 8000), relative /api paths work immediately
   if (window.location.protocol.startsWith("http") && window.location.port === "8000") {
     return "";
@@ -39,39 +346,67 @@ function getGatewayBase() {
 function resolveApiUrl(path) {
   if (!path.startsWith("/")) path = "/" + path;
   const base = getGatewayBase();
+  if (base === "standalone") return path;
   return base ? `${base}${path}` : path;
 }
 
-// Transparently intercept window.fetch so all /api/... calls dynamically use the correct gateway host
 const nativeFetch = window.fetch;
-window.fetch = function(input, init) {
-  if (typeof input === "string" && input.startsWith("/api/")) {
-    input = resolveApiUrl(input);
+window.fetch = async function(input, init) {
+  let url = typeof input === "string" ? input : (input && input.url ? input.url : "");
+
+  if (url.includes("/api/")) {
+    const apiPath = url.startsWith("http") ? new URL(url).pathname : url;
+
+    // If on Vercel or cloud static host, serve immediately from clientGateway
+    if (isCloudHosted) {
+      const mockRes = clientGateway.handle(apiPath, init);
+      if (mockRes) return mockRes;
+    }
+
+    // Try live network request
+    try {
+      const resolvedUrl = resolveApiUrl(apiPath);
+      const res = await nativeFetch.call(this, resolvedUrl, init);
+      if (res && res.ok) {
+        return res;
+      }
+    } catch (e) {
+      // Backend offline or unreachable
+    }
+
+    // Fallback to clientGateway
+    const mockRes = clientGateway.handle(apiPath, init);
+    if (mockRes) return mockRes;
   }
+
   return nativeFetch.call(this, input, init);
 };
 
 async function probeGatewayConnection() {
+  if (isCloudHosted) {
+    apiBaseUrl = "standalone";
+    return true;
+  }
   if (window.location.protocol.startsWith("http") && window.location.port === "8000") {
     apiBaseUrl = "";
     return true;
   }
   const candidates = [
     "http://127.0.0.1:8000",
-    "http://localhost:8000",
-    ""
+    "http://localhost:8000"
   ];
   for (const base of candidates) {
     try {
-      const url = base ? `${base}/api/health` : "/api/health";
-      const res = await nativeFetch(url, { method: "GET", mode: "cors" });
+      const res = await nativeFetch(`${base}/api/health`, { method: "GET", mode: "cors" });
       if (res && res.ok) {
         apiBaseUrl = base;
         return true;
       }
     } catch (e) {}
   }
-  return false;
+  // Standalone simulation gateway handles it seamlessly
+  apiBaseUrl = "standalone";
+  return true;
 }
 
 // Application State
