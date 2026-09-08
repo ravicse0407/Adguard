@@ -213,9 +213,12 @@
         <div class="error-alert-banner" id="global-error-banner" style="display: none;">
           <div class="e-left">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            <span>Unable to load security telemetry. Reconnecting to Gateway...</span>
+            <span id="global-error-text">Gateway Offline — Running in Standalone Security Simulation Mode</span>
           </div>
-          <button class="btn-retry-action" id="btn-global-retry">Retry Connection</button>
+          <div class="e-right" style="display: flex; gap: 0.5rem; align-items: center;">
+            <button class="btn-retry-action" id="btn-global-retry">Retry Connection</button>
+            <button class="btn-retry-action btn-dismiss-action" id="btn-dismiss-error" style="background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.15); color: var(--text-secondary);">Dismiss</button>
+          </div>
         </div>
 
         <!-- ===================================================================

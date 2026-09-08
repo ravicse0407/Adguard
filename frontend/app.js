@@ -16,6 +16,64 @@
  * - Full Error Handling & Retry States
  */
 
+// =========================================================================
+// Universal Multi-Origin Gateway Connector (Auto-detects Port 8000, 5500, file://, etc.)
+// =========================================================================
+let apiBaseUrl = "";
+let userDismissedBanner = false;
+
+function getGatewayBase() {
+  if (apiBaseUrl) return apiBaseUrl;
+  if (typeof window === "undefined") return "";
+  // If hosted directly on FastAPI (port 8000), relative /api paths work immediately
+  if (window.location.protocol.startsWith("http") && window.location.port === "8000") {
+    return "";
+  }
+  // If opened via file:// or another local dev server port (e.g. 5500, 3000, 5173), default to port 8000
+  if (window.location.protocol === "file:" || (window.location.port && window.location.port !== "8000")) {
+    return "http://127.0.0.1:8000";
+  }
+  return "";
+}
+
+function resolveApiUrl(path) {
+  if (!path.startsWith("/")) path = "/" + path;
+  const base = getGatewayBase();
+  return base ? `${base}${path}` : path;
+}
+
+// Transparently intercept window.fetch so all /api/... calls dynamically use the correct gateway host
+const nativeFetch = window.fetch;
+window.fetch = function(input, init) {
+  if (typeof input === "string" && input.startsWith("/api/")) {
+    input = resolveApiUrl(input);
+  }
+  return nativeFetch.call(this, input, init);
+};
+
+async function probeGatewayConnection() {
+  if (window.location.protocol.startsWith("http") && window.location.port === "8000") {
+    apiBaseUrl = "";
+    return true;
+  }
+  const candidates = [
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    ""
+  ];
+  for (const base of candidates) {
+    try {
+      const url = base ? `${base}/api/health` : "/api/health";
+      const res = await nativeFetch(url, { method: "GET", mode: "cors" });
+      if (res && res.ok) {
+        apiBaseUrl = base;
+        return true;
+      }
+    } catch (e) {}
+  }
+  return false;
+}
+
 // Application State
 const state = {
   currentView: "view-overview",
@@ -87,12 +145,28 @@ document.addEventListener("DOMContentLoaded", () => {
   // Background Synchronization every 3.5 seconds
   state.pollInterval = setInterval(fetchAllData, 3500);
 
-  // Global Retry Button
+  // Global Retry & Dismiss Buttons
   const retryBtn = document.getElementById("btn-global-retry");
   if (retryBtn) {
-    retryBtn.addEventListener("click", () => {
-      showToast("Re-testing gateway connection...", "green");
-      fetchAllData();
+    retryBtn.addEventListener("click", async () => {
+      userDismissedBanner = false;
+      showToast("Testing gateway connection at http://127.0.0.1:8000...", "blue");
+      const isLive = await probeGatewayConnection();
+      if (isLive) {
+        showToast("Connected to AgentGuard Gateway (v1.2.0)!", "green");
+        fetchAllData();
+      } else {
+        showToast("Gateway still unreachable. Operating in Standalone Simulation Mode.", "amber");
+      }
+    });
+  }
+
+  const dismissBtn = document.getElementById("btn-dismiss-error");
+  if (dismissBtn) {
+    dismissBtn.addEventListener("click", () => {
+      userDismissedBanner = true;
+      setErrorBanner(false);
+      showToast("Operating in Standalone Security Simulation Mode", "blue");
     });
   }
 });
@@ -102,6 +176,13 @@ document.addEventListener("DOMContentLoaded", () => {
 // =========================================================================
 async function fetchAllData() {
   try {
+    const isLive = await probeGatewayConnection();
+
+    if (!isLive) {
+      loadDemoFallbackData(true);
+      return;
+    }
+
     const [
       statsRes, logsRes, pendingRes, agentsRes, threatsRes,
       postureRes, policiesRes, healthRes, settingsRes,
@@ -124,84 +205,116 @@ async function fetchAllData() {
       fetch("/api/analytics/behavioral").catch(() => null),
     ]);
 
-    // Check if critical core API responded, or use rich interactive demo fallback with error banner
+    // Check if critical core API responded, or use rich interactive demo fallback
     if (!statsRes || !statsRes.ok) {
       loadDemoFallbackData(true);
       return;
     }
     setErrorBanner(false);
 
+    // Isolate component renders with try-catch so one minor issue never breaks telemetry
     if (statsRes && statsRes.ok) {
-      state.stats = await statsRes.json();
-      renderStats(state.stats);
+      try {
+        state.stats = await statsRes.json();
+        renderStats(state.stats);
+      } catch (e) { console.warn("Error rendering stats:", e); }
     }
     if (logsRes && logsRes.ok) {
-      state.logs = await logsRes.json();
-      renderLiveStreams(state.logs);
-      renderForensicsTable(state.logs);
-      renderNotifications();
-      if (state.logs.length > 0) {
-        renderForensicTimeline(state.logs[0]);
-      }
+      try {
+        state.logs = await logsRes.json();
+        renderLiveStreams(state.logs);
+        renderForensicsTable(state.logs);
+        renderNotifications();
+        if (state.logs.length > 0) {
+          renderForensicTimeline(state.logs[0]);
+        }
+      } catch (e) { console.warn("Error rendering logs:", e); }
     }
     if (pendingRes && pendingRes.ok) {
-      state.pending = await pendingRes.json();
-      renderApprovals(state.pending);
+      try {
+        state.pending = await pendingRes.json();
+        renderApprovals(state.pending);
+      } catch (e) { console.warn("Error rendering approvals:", e); }
     }
     if (agentsRes && agentsRes.ok) {
-      state.agents = await agentsRes.json();
-      renderAgents(state.agents);
+      try {
+        state.agents = await agentsRes.json();
+        renderAgents(state.agents);
+      } catch (e) { console.warn("Error rendering agents:", e); }
     }
     if (threatsRes && threatsRes.ok) {
-      state.threats = await threatsRes.json();
-      renderThreats(state.threats);
+      try {
+        state.threats = await threatsRes.json();
+        renderThreats(state.threats);
+      } catch (e) { console.warn("Error rendering threats:", e); }
     }
     if (postureRes && postureRes.ok) {
-      state.posture = await postureRes.json();
-      renderPosture(state.posture);
+      try {
+        state.posture = await postureRes.json();
+        renderPosture(state.posture);
+      } catch (e) { console.warn("Error rendering posture:", e); }
     }
     if (policiesRes && policiesRes.ok) {
-      state.policies = await policiesRes.json();
-      renderPolicies(state.policies);
+      try {
+        state.policies = await policiesRes.json();
+        renderPolicies(state.policies);
+      } catch (e) { console.warn("Error rendering policies:", e); }
     }
     if (healthRes && healthRes.ok) {
-      state.health = await healthRes.json();
-      renderHealth(state.health);
+      try {
+        state.health = await healthRes.json();
+        renderHealth(state.health);
+      } catch (e) { console.warn("Error rendering health:", e); }
     }
     if (settingsRes && settingsRes.ok) {
-      state.settings = await settingsRes.json();
-      renderSettings(state.settings);
+      try {
+        state.settings = await settingsRes.json();
+        renderSettings(state.settings);
+      } catch (e) { console.warn("Error rendering settings:", e); }
     }
     if (incidentsRes && incidentsRes.ok) {
-      state.incidents = await incidentsRes.json();
-      renderIncidents(state.incidents);
+      try {
+        state.incidents = await incidentsRes.json();
+        renderIncidents(state.incidents);
+      } catch (e) { console.warn("Error rendering incidents:", e); }
     }
     if (responsesRes && responsesRes.ok) {
-      const respData = await responsesRes.json();
-      state.responses = respData.rules || [];
-      renderResponses(state.responses);
+      try {
+        const respData = await responsesRes.json();
+        state.responses = respData.rules || [];
+        renderResponses(state.responses);
+      } catch (e) { console.warn("Error rendering responses:", e); }
     }
     if (recsRes && recsRes.ok) {
-      state.recommendations = await recsRes.json();
-      renderPolicyRecommendations(state.recommendations);
+      try {
+        state.recommendations = await recsRes.json();
+        renderPolicyRecommendations(state.recommendations);
+      } catch (e) { console.warn("Error rendering recommendations:", e); }
     }
     if (graphRes && graphRes.ok) {
-      state.graphData = await graphRes.json();
-      if (state.currentView === "view-graph") {
-        renderSecurityGraph(state.graphData);
-      }
+      try {
+        state.graphData = await graphRes.json();
+        if (state.currentView === "view-graph") {
+          renderSecurityGraph(state.graphData);
+        }
+      } catch (e) { console.warn("Error rendering graph:", e); }
     }
     if (behavioralRes && behavioralRes.ok) {
-      state.behavioralData = await behavioralRes.json();
-      if (state.currentView === "view-analytics") {
-        renderBehavioralAnalytics(state.behavioralData);
-      }
+      try {
+        state.behavioralData = await behavioralRes.json();
+        if (state.currentView === "view-analytics") {
+          renderBehavioralAnalytics(state.behavioralData);
+        }
+      } catch (e) { console.warn("Error rendering behavioral analytics:", e); }
     }
 
-    renderAnalyticsCharts();
+    try {
+      renderAnalyticsCharts();
+    } catch (e) { console.warn("Error rendering charts:", e); }
+
   } catch (err) {
     console.error("AgentGuard synchronization error:", err);
-    setErrorBanner(true);
+    loadDemoFallbackData(true);
   }
 }
 
@@ -361,13 +474,25 @@ function loadDemoFallbackData(isError = false) {
   renderHealth(state.health);
   renderSettings(state.settings);
   renderAnalyticsCharts();
-  setErrorBanner(isError);
+  if (isError) {
+    setErrorBanner(true, "Gateway Offline — Running in Standalone Security Simulation Mode (Interactive Controls Active)");
+  } else {
+    setErrorBanner(false);
+  }
 }
 
-function setErrorBanner(show) {
+function setErrorBanner(show, customMessage = null) {
   const banner = document.getElementById("global-error-banner");
+  const bannerText = document.getElementById("global-error-text");
   if (banner) {
-    banner.style.display = show ? "flex" : "none";
+    if (show && userDismissedBanner) {
+      banner.style.display = "none";
+    } else {
+      banner.style.display = show ? "flex" : "none";
+    }
+    if (bannerText && customMessage) {
+      bannerText.textContent = customMessage;
+    }
   }
   state.isErrorState = show;
 }
